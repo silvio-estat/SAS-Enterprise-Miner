@@ -1,0 +1,105 @@
+/*Criado por: Silvio F. Gomes Junior*/
+
+/*O programa abaixo cria um arquivo . PDF chamado de jjjjjj que mostra o Information Value no tempo*/
+/*de variaveis intervalares*/
+
+/*ATENCAO: RECOMENDA-SE QUE AS VARIAVEIS A SEREM ANALISADAS JA ESTEJAM BINADAS COM O FORMATO INTERVALAR*/
+
+%let name = anl_poder_variavel;
+ 
+%let type= PDF;
+ 
+%let description = aaa;
+ 
+data _null_;
+ 
+call symput('ende',"&&EM_NODEDIR" || "/GRAPH");
+ 
+run;
+ 
+ 
+%em_register(key=&name, type=FILE, extension=&type);
+ 
+ods listing gpath="&&ende";
+ 
+ 
+ods &type file="&&em_user_&name";
+ 
+ods graphics on;
+
+%macro IV_TEMPO(base);
+ 
+%do i=1 %to &EM_NUM_INTERVAL_INPUT;
+ 
+%let var=%scan(%EM_INTERVAL_INPUT, &i);
+
+proc sql;
+create table IV1 as
+select datepart(%EM_TIMEID) format date9. as data_safra,
+	&variavel,
+	count(%EM_TARGET) as total,
+	sum(%EM_TARGET) as ruim,
+	calculated total - calculated ruim as bom
+from &base
+group by calculated data_safra, &variavel;
+quit;
+ 
+proc sql;
+create table IV2 as
+select datepart(%EM_TIMEID) format date9. as data_safra,
+	count(%EM_TARGET) as total_geral,
+	sum(%EM_TARGET) as total_ruim,
+	calculated total_geral - calculated total_ruim as total_bom
+from &base
+group by calculated data_safra;
+quit;
+ 
+proc sql;
+create table IV3 as
+select a.*,
+        b.total_geral,
+        b.total_ruim,
+        b.total_bom,
+        a.bom/b.total_bom as pct_bom,
+        a.ruim/b.total_ruim as pct_ruim,
+        (calculated pct_bom)/(calculated pct_ruim) as prop_pct_br,
+        LOG(calculated prop_pct_br)*(calculated pct_bom - calculated pct_ruim) as IV_faixa
+from IV1 as a left join IV2 as b
+on a.data_safra=b.data_safra;
+quit;
+ 
+proc sql;
+create table IV4 as
+select data_safra,
+	sum(IV_faixa) as IV
+from IV3
+group by data_safra;
+quit;
+ 
+ 
+proc sgplot data=IV4;
+series x=data_safra y=IV;
+   TITLE "Importância da variável" &variavel " ao longo do tempo";
+    FOOTNOTE "Base: &&base";
+yaxis values=(0 to 1 by 0.1) label = "Information Value";
+refline 0.1 /axis=y label="Fraco" lineattrs=(color=red pattern=14);
+refline 0.3 /axis=y label="Médio" lineattrs=(color=blue pattern=14);
+refline 0.5 /axis=y label="forte" lineattrs=(color=green pattern=14);
+RUN;
+ 
+proc print data=IV4;
+run;
+%end;
+ 
+ 
+%mend IV_TEMPO;
+ 
+%IV_TEMPO(base1);
+
+ods listing close;
+ 
+ods &type close;
+ 
+%em_report(key=&name, block=MODEL, viewtype=FILEVIEWER, autodisplay=Y, description=&description);
+ 
+ods graphics off;

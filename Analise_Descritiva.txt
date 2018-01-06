@@ -1,0 +1,116 @@
+Criado por: Silvio F. Gomes Junior
+
+
+/*Cria um arquivo .PDF dentro da pasta do node de programa chamado "anl_descritiva" contendo uma analise descritiva de variaveis itervalares e nominais*/
+/*Os graficos gerados no arquivo tambem sao salvos na pasta "Graph" do node podendo ser visualizados nos resultados*/
+/*do proprio node*/
+
+/*Esse node contendo esse programa deve ser executado apos a correta configuracao dos atributos de todas as varia-*/
+/*veis do banco de dados*/
+
+
+%let name = anl_descritiva;
+ 
+%let type= PDF;
+ 
+%let description = aaa;
+ 
+data _null_;
+ 
+call symput('ende',"&&EM_NODEDIR" || "/GRAPH");
+ 
+run;
+ 
+ 
+%em_register(key=&name, type=FILE, extension=&type);
+ 
+ods listing gpath="&&ende";
+ 
+ 
+ods &type file="&&em_user_&name";
+ 
+ods graphics on;
+ 
+%MACRO descritiva_tempo1();
+
+/*let tempo=*/
+ 
+%do i=1 %to &EM_NUM_NOMINAL_INPUT;
+ 
+%let var=%scan(%EM_NOMINAL_INPUT, &i);
+ 
+proc sql;
+    create table bt_&var as
+    select distinct datepart(a.%EM_TIMEID) as data_safra format=date9.,
+                      n(&var) as QTDE_TOTAL
+             from  &EM_IMPORT_DATA
+        group by calculated data_safra;
+ 
+ 
+ 
+    create table bf_&var as
+    select distinct datepart(a.%EM_TIMEID) as data_safra format=date9.,
+                      a.&var,
+                                        n(a.&var) as QTDE,
+                                        n(a.&var)/b.QTDE_TOTAL as PERC
+             from  &EM_IMPORT_DATA as a left join bt_&var as b
+                                    on datepart(a.%EM_TIMEID) = b.data_safra
+            group by datepart(a.%EM_TIMEID), &var;
+quit;
+ 
+ 
+proc sgplot data= bf_&var ;
+    series x=data_safra y=PERC / group=&var ; YAXIS min=0 ;
+    title "Percentual de individuos com a variavel &var no tempo";
+run;
+ 
+ 
+proc sgplot data= bf_&var ;
+    series x=data_safra y=QTDE / group=&var ; YAXIS min=0 ;
+    title "Quantidade de individuos com a variavel &var no tempo";
+run;
+%end;
+ 
+ 
+%mend;
+%descritiva_tempo1();
+ 
+%macro quanti();
+ 
+%do i=1 %to &EM_NUM_INTERVAL_INPUT;
+ 
+%let var=%scan(%EM_INTERVAL_INPUT, &i);
+ 
+proc sql;
+create table base as
+select datepart(%EM_TIMEID) as data_safra format=date9.,
+mean(&var) as media
+from &EM_IMPORT_DATA
+group by calculated data_safra;
+quit;
+ 
+proc sgplot data=base;
+series x=data_safra y=media;
+    YAXIS min=0;
+   TITLE "Media da variavel" &var;
+RUN;
+ 
+proc means data=&EM_IMPORT_DATA N NMISS MEAN MIN p1 p5 p10 p25 p50 p75 p90 p95 p99 MAX;
+var &var;
+run;
+ 
+%end;
+ 
+%mend quanti;
+ 
+%quanti();
+ 
+ods listing close;
+ 
+ods &type close;
+ 
+%em_report(key=&name, block=MODEL, viewtype=FILEVIEWER, autodisplay=Y, description=&description);
+ 
+ods graphics off;
+ 
+ods listing;
